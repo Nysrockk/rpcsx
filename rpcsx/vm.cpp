@@ -926,7 +926,7 @@ void *vm::map(void *addr, std::uint64_t len, std::int32_t prot,
   int realFlags = MAP_FIXED | MAP_SHARED;
   bool isAnon = (flags & kMapFlagAnonymous) == kMapFlagAnonymous;
   bool isShared = (flags & kMapFlagShared) == kMapFlagShared;
-  flags &= ~(kMapFlagFixed | kMapFlagAnonymous | kMapFlagShared);
+  flags &= ~(kMapFlagFixed | kMapFlagAnonymous | kMapFlagShared | kMapFlagPrivate);
 
   auto &block = gBlocks[(address >> kBlockShift) - kFirstBlock];
   if (noOverwrite) {
