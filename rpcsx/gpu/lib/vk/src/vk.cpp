@@ -229,18 +229,24 @@ void vk::Context::recreateSwapchain(VkExtent2D extent) {
     swapchainExtent = extent;
   }
 
+  // Prefer MAILBOX (triple buffering) over FIFO (vsync) over IMMEDIATE (no vsync)
+  // IMMEDIATE causes screen tearing and flickering, so avoid it unless nothing else is available
   VkPresentModeKHR swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
   for (std::size_t i = 0; i < presentModeCount; i++) {
-    if (presentModes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) {
-      swapchainPresentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
-      continue;
-    }
-
     if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
       swapchainPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-      break;
+      break;  // MAILBOX is best, use it
     }
   }
+  // FIFO is guaranteed to be available, so we'll use it if MAILBOX isn't found
+  // We never prefer IMMEDIATE mode as it causes flickering
+
+  const char* presentModeName = "UNKNOWN";
+  if (swapchainPresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) presentModeName = "IMMEDIATE";
+  else if (swapchainPresentMode == VK_PRESENT_MODE_MAILBOX_KHR) presentModeName = "MAILBOX";
+  else if (swapchainPresentMode == VK_PRESENT_MODE_FIFO_KHR) presentModeName = "FIFO";
+  else if (swapchainPresentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR) presentModeName = "FIFO_RELAXED";
+  std::fprintf(stderr, "[VK] Using present mode: %s\n", presentModeName);
 
   uint32_t desiredNumberOfSwapchainImages = surfCaps.minImageCount;
   if ((surfCaps.maxImageCount > 0) &&

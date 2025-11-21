@@ -46,6 +46,15 @@ static orbis::ErrorCode hid_ioctl(orbis::File *file, std::uint64_t request,
     // TODO
     return {};
 
+  case 0x80084809: {
+    // Controller availability/status check
+    // Returns controller handle/ID
+    ORBIS_LOG_WARNING("hid ioctl 0x80084809 - controller status check");
+    *static_cast<std::uint64_t *>(argp) = 1; // Controller ID 1
+    thread->retval[0] = 1;
+    return {};
+  }
+
   case 0xc0484851: {
     if (orbis::g_context->fwType != orbis::FwType::Ps5) {
       return orbis::ErrorCode::INVAL;
@@ -83,6 +92,13 @@ static orbis::ErrorCode hid_ioctl(orbis::File *file, std::uint64_t request,
 
         *args->state = gpu.getContext().kbPadState;
         thread->retval[0] = 1;
+
+        // Debug: Log button state for PS5 path
+        static std::uint32_t lastButtons = 0;
+        if (args->state->buttons != lastButtons) {
+          ORBIS_LOG_ERROR("HID PS5: App reading buttons:", args->state->buttons);
+          lastButtons = args->state->buttons;
+        }
       }
     }
     return {};
@@ -110,6 +126,13 @@ static orbis::ErrorCode hid_ioctl(orbis::File *file, std::uint64_t request,
       *args.connected = 1;
       *args.unk4 = 1; // is wireless?
       thread->retval[0] = 1;
+
+      // Debug: Log when buttons are actually read by the app
+      static std::uint32_t lastButtons = 0;
+      if (args.state->buttons != lastButtons) {
+        ORBIS_LOG_ERROR("HID: App reading buttons:", args.state->buttons);
+        lastButtons = args.state->buttons;
+      }
     }
     return {};
   }
@@ -117,6 +140,14 @@ static orbis::ErrorCode hid_ioctl(orbis::File *file, std::uint64_t request,
   case 0x8010480e: {
     // read information
     // ORBIS_LOG_ERROR("hid read information");
+    return {};
+  }
+
+  case 0x8010480f: {
+    // read information (variant)
+    // ORBIS_LOG_ERROR("hid read information 0f");
+    // Return success - controller is ready
+    thread->retval[0] = 1;
     return {};
   }
 
@@ -133,6 +164,13 @@ static orbis::ErrorCode hid_ioctl(orbis::File *file, std::uint64_t request,
       auto args = *reinterpret_cast<MiniReadStateArgs *>(argp);
       *args.state = gpu.getContext().kbPadState;
       thread->retval[0] = 1;
+
+      // Debug: Log button state for mini read path
+      static std::uint32_t lastButtons = 0;
+      if (args.state->buttons != lastButtons) {
+        ORBIS_LOG_ERROR("HID MINI: App reading buttons:", args.state->buttons);
+        lastButtons = args.state->buttons;
+      }
     }
     return {};
   }

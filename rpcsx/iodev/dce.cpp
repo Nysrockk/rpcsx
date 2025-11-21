@@ -486,6 +486,18 @@ static orbis::ErrorCode dce_ioctl(orbis::File *file, std::uint64_t request,
     } else if (args->id == 0x1e) {
       // TODO
       return {};
+    } else if (args->id == 0xf) {
+      // Get display config - stub
+      return {};
+    } else if (args->id == 0x10) {
+      // Set display config - stub
+      return {};
+    } else if (args->id == 0x14) {
+      // Display control - stub
+      return {};
+    } else if (args->id == 0x15) {
+      // Subwindow control - stub
+      return {};
     } else if (args->id == 1) {
 
       // Mode set

@@ -9,7 +9,7 @@ namespace orbis {
 SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
                       ptr<void> old, ptr<size_t> oldlenp, ptr<void> new_,
                       size_t newlen) {
-  enum sysctl_ctl { unspec, kern, vm, vfs, net, debug, hw, machdep, user };
+  enum sysctl_ctl { unspec, kern, vm, vfs, net, debug, hw, machdep, user, dev };
 
   enum sysctl_kern {
     proc = 14,
@@ -61,6 +61,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     idps,
     openpsid_for_sys,
     sceKernelIsCavern,
+    use_idle_hlt,
   };
 
   enum sysctl_machdep_liverpool {
@@ -80,12 +81,41 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     mlock_avail = 1000,
   };
 
+  enum sysctl_dev {
+    cpu = 1000,
+  };
+
+  enum sysctl_dev_cpu {
+    freq = 1000,
+  };
+
   struct ProcInfo {
     char data[0x448];
   };
 
+  // Safely read name array from guest memory
+  // name is ptr<sint> pointing to an array, so name[i] is ptr<sint> to the i-th element
+  std::vector<sint> safeNames(namelen);
+  for (unsigned int i = 0; i < namelen; ++i) {
+    if (auto result = uread(safeNames[i], name + i); result != ErrorCode{}) {
+      return result;  // Failed to read name array
+    }
+  }
+  // Use safeNames instead of name[] from here on
+  #define name safeNames
+
+  // Safely read oldlenp value at start for initial validation
+  // NOTE: Handlers that need to re-read oldlenp should use uread(oldlen, oldlenp)
+  // For simple safeOldLen dereferences, use safeOldLen below
+  size_t safeOldLen = 0;
+  if (oldlenp != nullptr) {
+    if (auto result = uread(safeOldLen, oldlenp); result != ErrorCode{}) {
+      return result;  // Failed to read oldlenp
+    }
+  }
+
   // for (unsigned int i = 0; i < namelen; ++i) {
-  //   std::fprintf(stderr, "   name[%u] = %u\n", i, name[i]);
+  //   std::fprintf(stderr, "   name[%u] = %d\n", i, name[i]);
   // }
 
   if (namelen == 6) {
@@ -106,7 +136,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
 
     if (name[0] == machdep && name[1] == bootparams &&
         name[2] == is_main_on_standby) {
-      if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -114,8 +144,18 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       return {};
     }
 
+    if (name[0] == machdep && name[1] == use_idle_hlt) {
+      if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
+        return ErrorCode::INVAL;
+      }
+
+      // Return 1 to enable idle halt (power saving)
+      *(uint32_t *)old = 1;
+      return {};
+    }
+
     if (name[0] == kern && name[1] == os_rel_date) {
-      if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -126,7 +166,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     if (name[0] == kern && name[1] == proc && name[2] == 41) {
       // std::printf("   kern.14.41\n");
 
-      if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -137,7 +177,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     if (name[0] == kern && name[1] == proc && name[2] == 42) {
       // std::printf("   kern.14.42\n");
 
-      if ((oldlenp != nullptr && *oldlenp != 0) || new_ == nullptr ||
+      if ((oldlenp != nullptr && safeOldLen != 0) || new_ == nullptr ||
           newlen != 4) {
         return ErrorCode::INVAL;
       }
@@ -153,12 +193,11 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       ORBIS_LOG_ERROR("KERN_PROC_PROC");
       thread->where();
       std::memset(old, 0, sizeof(ProcInfo));
-      *oldlenp = sizeof(ProcInfo);
-      return {};
+      return uwrite(oldlenp, sizeof(ProcInfo));
     }
 
     if (name[0] == machdep && name[1] == liverpool && name[2] == telemetry) {
-      if (*oldlenp != 8 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 8 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -166,7 +205,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       return {};
     }
     if (name[0] == machdep && name[1] == liverpool && name[2] == icc_max) {
-      if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -175,7 +214,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     }
 
     if (name[0] == hw && name[1] == config && name[2] == chassis_info) {
-      if (*oldlenp != 8 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 8 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -184,7 +223,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     }
 
     if (name[0] == kern && name[1] == geom && name[2] == updtfmt) {
-      if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -193,7 +232,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     }
 
     if (name[0] == vm && name[1] == budgets && name[2] == mlock_total) {
-      if (*oldlenp != 8 || new_ != nullptr || newlen != 0) {
+      if (safeOldLen != 8 || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -204,7 +243,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     }
 
     if (name[0] == vm && name[1] == budgets && name[2] == mlock_avail) {
-      if ((*oldlenp != 16 && *oldlenp != 8) || new_ != nullptr || newlen != 0) {
+      if ((safeOldLen != 16 && safeOldLen != 8) || new_ != nullptr || newlen != 0) {
         return ErrorCode::INVAL;
       }
 
@@ -213,7 +252,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
 
       auto result = (uint64_t *)old;
       result[0] = fmem.total - fmem.used;
-      if (*oldlenp == 16) {
+      if (safeOldLen == 16) {
         result[1] = fmem.total;
       }
       return {};
@@ -232,14 +271,24 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       std::memset(old, 0, sizeof(ProcInfo));
-      *oldlenp = sizeof(ProcInfo);
-      return {};
+      return uwrite(oldlenp, sizeof(ProcInfo));
     }
   }
 
   if (namelen == 4) {
+    if (name[0] == dev && name[1] == cpu && name[3] == freq) {
+      // dev.cpu.N.freq - CPU frequency in MHz
+      // name[2] is the CPU index (0-7)
+      if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
+        return ErrorCode::INVAL;
+      }
+      // PS4 CPU (AMD Jaguar) base frequency is 1.6 GHz = 1600 MHz
+      *(uint32_t *)old = 1600;
+      return {};
+    }
+
     if (name[0] == kern && name[1] == proc && name[2] == 37) {
-      if (oldlenp && old && *oldlenp == 4) {
+      if (oldlenp && old && safeOldLen == 4) {
         return uwrite(ptr<uint32_t>(old), ~0u);
       }
     }
@@ -249,7 +298,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         return orbis::ErrorCode::INVAL;
       }
 
-      if (oldlenp && old && *oldlenp == 4) {
+      if (oldlenp && old && safeOldLen == 4) {
         return uwrite<uint32_t>(ptr<uint32_t>(old),
                                 thread->tproc->type == ProcessType::Ps5 ? 1
                                                                         : 0);
@@ -366,7 +415,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
 
     if (name[0] == 1 && name[1] == 14 && name[2] == 44) {
       // GetLibkernelTextLocation
-      if (*oldlenp != 16) {
+      if (safeOldLen != 16) {
         return ErrorCode::INVAL;
       }
 
@@ -492,224 +541,266 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     case sysctl_ctl::unspec: {
       switch (name[1]) {
       case 3: {
-        // std::fprintf(stderr, "   unspec - get name of '%s'\n",
-        //              std::string((char *)new_, newlen).c_str());
-        auto searchName = std::string_view((char *)new_, newlen);
-        auto *dest = (std::uint32_t *)old;
+        // String lookup for sysctl by name - validate parameters
+        if (new_ == nullptr || newlen == 0 || newlen > 256) {
+          return ErrorCode::INVAL;
+        }
+        if (old == nullptr || oldlenp == nullptr) {
+          return ErrorCode::INVAL;
+        }
+
+        // Check if old buffer size is valid
+        size_t oldlen_check;
+        ORBIS_RET_ON_ERROR(uread(oldlen_check, oldlenp));
+        if (oldlen_check == 0) {
+          return ErrorCode::INVAL;
+        }
+
+        // Read the sysctl name string from guest memory
+        std::string searchNameStr(newlen, '\0');
+        for (size_t i = 0; i < newlen; ++i) {
+          char ch;
+          if (auto result = uread(ch, (ptr<char>)new_ + i); result != ErrorCode{}) {
+            return result;
+          }
+          searchNameStr[i] = ch;
+        }
+        auto searchName = std::string_view(searchNameStr);
+        // std::fprintf(stderr, "   unspec - get name of '%s'\n", searchName.data());
+        // Use a local buffer to build the OID, then write to guest memory
+        std::uint32_t oid_buffer[16];  // Max OID length
         std::uint32_t count = 0;
 
         if (searchName == "kern.smp.cpus") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = smp_cpus;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = smp_cpus;
         } else if (searchName == "machdep.tsc_freq") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = machdep;
-          dest[count++] = tsc_freq;
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = tsc_freq;
         } else if (searchName == "kern.sdk_version") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = sdk_version;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = sdk_version;
         } else if (searchName == "kern.rng_pseudo") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = rng_pseudo;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = rng_pseudo;
         } else if (searchName == "kern.sched.cpusetsize") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = sched_cpusetsize;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = sched_cpusetsize;
         } else if (searchName == "kern.proc.ptc") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = proc_ptc;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = proc_ptc;
         } else if (searchName == "kern.cpumode") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = cpu_mode;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = cpu_mode;
         } else if (searchName == "kern.backup_restore_mode") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = backup_restore_mode;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = backup_restore_mode;
         } else if (searchName == "kern.console") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = console;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = console;
         } else if (searchName == "kern.init_safe_mode") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = init_safe_mode;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = init_safe_mode;
         } else if (searchName == "hw.config.chassis_info") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = hw;
-          dest[count++] = config;
-          dest[count++] = chassis_info;
+          oid_buffer[count++] = hw;
+          oid_buffer[count++] = config;
+          oid_buffer[count++] = chassis_info;
         } else if (searchName == "machdep.liverpool.telemetry") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = machdep;
-          dest[count++] = liverpool;
-          dest[count++] = telemetry;
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = liverpool;
+          oid_buffer[count++] = telemetry;
         } else if (searchName == "machdep.liverpool.icc_max") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = machdep;
-          dest[count++] = liverpool;
-          dest[count++] = icc_max;
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = liverpool;
+          oid_buffer[count++] = icc_max;
         } else if (searchName == "vm.swap_avail") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = vm;
-          dest[count++] = swap_avail;
+          oid_buffer[count++] = vm;
+          oid_buffer[count++] = swap_avail;
         } else if (searchName == "vm.kern_heap_size") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = vm;
-          dest[count++] = kern_heap_size;
+          oid_buffer[count++] = vm;
+          oid_buffer[count++] = kern_heap_size;
         } else if (searchName == "vm.swap_total") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = vm;
-          dest[count++] = swap_total;
+          oid_buffer[count++] = vm;
+          oid_buffer[count++] = swap_total;
         } else if (searchName == "machdep.bootparams.is_main_on_standby") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = machdep;
-          dest[count++] = bootparams;
-          dest[count++] = is_main_on_standby;
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = bootparams;
+          oid_buffer[count++] = is_main_on_standby;
+        } else if (searchName == "machdep.use_idle_hlt") {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
+            std::fprintf(stderr, "   %s error\n", searchName.data());
+            return ErrorCode::INVAL;
+          }
+
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = use_idle_hlt;
         } else if (searchName == "hw.config.optical_out") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = hw;
-          dest[count++] = config;
-          dest[count++] = optical_out;
+          oid_buffer[count++] = hw;
+          oid_buffer[count++] = config;
+          oid_buffer[count++] = optical_out;
         } else if (searchName == "machdep.idps") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = machdep;
-          dest[count++] = idps;
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = idps;
         } else if (searchName == "kern.geom.updtfmt") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = kern;
-          dest[count++] = geom;
-          dest[count++] = updtfmt;
+          oid_buffer[count++] = kern;
+          oid_buffer[count++] = geom;
+          oid_buffer[count++] = updtfmt;
         } else if (searchName == "machdep.openpsid_for_sys") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = machdep;
-          dest[count++] = openpsid_for_sys;
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = openpsid_for_sys;
         } else if (searchName == "machdep.sceKernelIsCavern") {
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = machdep;
-          dest[count++] = sceKernelIsCavern;
+          oid_buffer[count++] = machdep;
+          oid_buffer[count++] = sceKernelIsCavern;
         } else if (searchName == "vm.budgets.mlock_total") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = vm;
-          dest[count++] = budgets;
-          dest[count++] = mlock_total;
+          oid_buffer[count++] = vm;
+          oid_buffer[count++] = budgets;
+          oid_buffer[count++] = mlock_total;
         } else if (searchName == "vm.budgets.mlock_avail") {
-          if (*oldlenp < 3 * sizeof(uint32_t)) {
+          if (safeOldLen < 3 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = vm;
-          dest[count++] = budgets;
-          dest[count++] = mlock_avail;
+          oid_buffer[count++] = vm;
+          oid_buffer[count++] = budgets;
+          oid_buffer[count++] = mlock_avail;
         } else if (searchName == "hw.sce_main_socid") {
           if (g_context->fwType != FwType::Ps5) {
             return ErrorCode::INVAL;
           }
 
-          if (*oldlenp < 2 * sizeof(uint32_t)) {
+          if (safeOldLen < 2 * sizeof(uint32_t)) {
             std::fprintf(stderr, "   %s error\n", searchName.data());
             return ErrorCode::INVAL;
           }
 
-          dest[count++] = hw;
-          dest[count++] = sce_main_socid;
+          oid_buffer[count++] = hw;
+          oid_buffer[count++] = sce_main_socid;
+        } else if (searchName == "dev.cpu.0.freq") {
+          if (safeOldLen < 4 * sizeof(uint32_t)) {
+            std::fprintf(stderr, "   %s error\n", searchName.data());
+            return ErrorCode::INVAL;
+          }
+
+          oid_buffer[count++] = dev;
+          oid_buffer[count++] = cpu;
+          oid_buffer[count++] = 0;  // cpu index 0
+          oid_buffer[count++] = freq;
         }
 
         if (count == 0) {
@@ -718,7 +809,14 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
           return ErrorCode::SRCH;
         }
 
-        *oldlenp = count * sizeof(uint32_t);
+        // Write the OID buffer to guest memory
+        for (uint32_t i = 0; i < count; ++i) {
+          ORBIS_RET_ON_ERROR(uwrite(ptr<uint32_t>(old) + i, oid_buffer[i]));
+        }
+
+        // Write the length back to guest
+        size_t result_len = count * sizeof(uint32_t);
+        ORBIS_RET_ON_ERROR(uwrite(oldlenp, result_len));
         return {};
       }
 
@@ -733,11 +831,11 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       switch (name[1]) {
       case sysctl_kern::boottime: {
         // FIXME: implement boottime support
-        if (*oldlenp < sizeof(timeval) || new_ != nullptr || newlen != 0) {
+        if (safeOldLen < sizeof(timeval) || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
-        *oldlenp = sizeof(timeval);
+        safeOldLen = sizeof(timeval);
         *ptr<timeval>(old) = {
             .tv_sec = 60,
             .tv_usec = 0,
@@ -745,7 +843,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         return {};
       }
       case sysctl_kern::usrstack: {
-        if (*oldlenp != 8 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 8 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -755,7 +853,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_kern::smp_cpus:
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -763,7 +861,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         return {};
 
       case sysctl_kern::sdk_version: {
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -773,15 +871,15 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_kern::sched_cpusetsize:
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
-        *(std::uint32_t *)old = 4;
+        ORBIS_RET_ON_ERROR(uwrite(ptr<std::uint32_t>(old), 4u));
         return {};
 
       case sysctl_kern::rng_pseudo:
-        if (*oldlenp != 0x40 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 0x40 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -794,7 +892,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
           std::uint64_t unk[7];
         };
 
-        if (*oldlenp != sizeof(kern37_value) || new_ != nullptr ||
+        if (safeOldLen != sizeof(kern37_value) || new_ != nullptr ||
             newlen != 0) {
           return ErrorCode::INVAL;
         }
@@ -805,7 +903,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_kern::proc_ptc: {
-        if (*oldlenp != 8 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 8 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -814,7 +912,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_kern::cpu_mode: {
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -826,7 +924,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_kern::backup_restore_mode:
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -840,7 +938,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         if (old && oldlenp) {
           ORBIS_LOG_ERROR("sysctl: get kern.init_safe_mode", oldlenp, new_,
                           newlen);
-          if (*oldlenp != 4) {
+          if (safeOldLen != 4) {
             return ErrorCode::INVAL;
           }
 
@@ -860,7 +958,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     case sysctl_ctl::vm:
       switch (name[1]) {
       case sysctl_vm::kern_heap_size:
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -868,7 +966,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         return {};
 
       case sysctl_vm::swap_total:
-        if (*oldlenp != 8 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 8 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -876,7 +974,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         return {};
 
       case sysctl_vm::swap_avail:
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -894,7 +992,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     case sysctl_ctl::hw:
       switch (name[1]) {
       case sysctl_hw::pagesize:
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -905,7 +1003,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         if (g_context->fwType != FwType::Ps5) {
           return ErrorCode::INVAL;
         }
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -913,7 +1011,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
         return {};
 
       case sysctl_hw::ncpu:
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
 
         } else {
 
@@ -929,7 +1027,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     case sysctl_ctl::machdep:
       switch (name[1]) {
       case sysctl_machdep::tsc_freq: {
-        if (*oldlenp != 8 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 8 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -945,7 +1043,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_machdep::idps: {
-        if (*oldlenp != 16 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 16 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -954,7 +1052,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_machdep::openpsid_for_sys: {
-        if (*oldlenp != 16 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 16 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -963,7 +1061,7 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
       }
 
       case sysctl_machdep::sceKernelIsCavern: {
-        if (*oldlenp != 4 || new_ != nullptr || newlen != 0) {
+        if (safeOldLen != 4 || new_ != nullptr || newlen != 0) {
           return ErrorCode::INVAL;
         }
 
@@ -984,14 +1082,17 @@ SysResult kern_sysctl(Thread *thread, ptr<sint> name, uint namelen,
     if (i != 0) {
       concatName += '.';
     }
-
     concatName += std::to_string(name[i]);
   }
 
-  std::size_t oldLen = oldlenp ? *oldlenp : 0;
+  // oldlenp now points to safeOldLen (already read at start)
+  std::size_t oldLen = oldlenp ? safeOldLen : 0;
   ORBIS_LOG_TODO(__FUNCTION__, concatName, oldLen, new_, newlen);
   thread->where();
-  return {};
+
+  // Return error for unimplemented sysctls instead of success
+  // Returning success makes guest think sysctl worked and try to use uninitialized data
+  return ErrorCode::NOENT;  // Sysctl not found
 }
 } // namespace orbis
 
@@ -1012,7 +1113,10 @@ orbis::SysResult orbis::sys___sysctl(Thread *thread, ptr<sint> name,
       concatName += std::to_string(name[i]);
     }
 
-    std::size_t oldLen = oldlenp ? *oldlenp : 0;
+    std::size_t oldLen = 0;
+    if (oldlenp) {
+      uread(oldLen, oldlenp);
+    }
     ORBIS_LOG_TODO(__FUNCTION__, concatName, oldLen, new_, newlen);
     thread->where();
   }

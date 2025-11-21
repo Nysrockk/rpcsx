@@ -163,8 +163,8 @@ void Cache::ShaderResources::loadResources(
     auto pointerOffset = eval(pointer.offset).zExtScalar();
 
     if (!pointerBase || !pointerOffset) {
-      res.dump();
-      rx::die("failed to evaluate pointer");
+      std::fprintf(stderr, "[GPU] WARNING: failed to evaluate pointer - skipping pointer\n");
+      continue;  // Skip this pointer instead of crashing
     }
 
     bufferMemoryTable.map(*pointerBase + *pointerOffset,
@@ -181,8 +181,8 @@ void Cache::ShaderResources::loadResources(
     auto word3 = eval(bufferRes.words[3]).zExtScalar();
 
     if (!word0 || !word1 || !word2 || !word3) {
-      res.dump();
-      rx::die("failed to evaluate V#");
+      std::fprintf(stderr, "[GPU] WARNING: failed to evaluate V# (vertex buffer) - skipping buffer\n");
+      continue;  // Skip this buffer instead of crashing
     }
 
     gnm::VBuffer buffer{};
@@ -214,8 +214,8 @@ void Cache::ShaderResources::loadResources(
     auto word3 = eval(imageBuffer.words[3]).zExtScalar();
 
     if (!word0 || !word1 || !word2 || !word3) {
-      res.dump();
-      rx::die("failed to evaluate V#");
+      std::fprintf(stderr, "[GPU] WARNING: failed to evaluate V# (image buffer) - skipping image buffer\n");
+      continue;  // Skip this image buffer instead of crashing
     }
 
     gnm::TBuffer tbuffer{};
@@ -235,8 +235,8 @@ void Cache::ShaderResources::loadResources(
       auto word7 = eval(imageBuffer.words[7]).zExtScalar();
 
       if (!word4 || !word5 || !word6 || !word7) {
-        res.dump();
-        rx::die("failed to evaluate 256 bit T#");
+        std::fprintf(stderr, "[GPU] WARNING: failed to evaluate 256 bit T# (image buffer extended) - skipping image buffer\n");
+        continue;  // Skip this image buffer instead of crashing
       }
 
       std::memcpy(reinterpret_cast<std::uint32_t *>(&tbuffer) + 4, &*word4,
@@ -276,8 +276,8 @@ void Cache::ShaderResources::loadResources(
     auto word3 = eval(texture.words[3]).zExtScalar();
 
     if (!word0 || !word1 || !word2 || !word3) {
-      res.dump();
-      rx::die("failed to evaluate 128 bit T#");
+      std::fprintf(stderr, "[GPU] WARNING: failed to evaluate 128 bit T# - skipping texture (dynamic resource loading not fully supported)\n");
+      continue;  // Skip this texture instead of crashing
     }
 
     gnm::TBuffer tbuffer{};
@@ -297,8 +297,8 @@ void Cache::ShaderResources::loadResources(
       auto word7 = eval(texture.words[7]).zExtScalar();
 
       if (!word4 || !word5 || !word6 || !word7) {
-        res.dump();
-        rx::die("failed to evaluate 256 bit T#");
+        std::fprintf(stderr, "[GPU] WARNING: failed to evaluate 256 bit T# - skipping texture (dynamic resource loading not fully supported)\n");
+        continue;  // Skip this texture instead of crashing
       }
 
       std::memcpy(reinterpret_cast<std::uint32_t *>(&tbuffer) + 4, &*word4,
@@ -346,8 +346,8 @@ void Cache::ShaderResources::loadResources(
     auto word3 = eval(sampler.words[3]).zExtScalar();
 
     if (!word0 || !word1 || !word2 || !word3) {
-      res.dump();
-      rx::die("failed to evaluate S#");
+      std::fprintf(stderr, "[GPU] WARNING: failed to evaluate S# (sampler) - skipping sampler (dynamic resource loading not fully supported)\n");
+      continue;  // Skip this sampler instead of crashing
     }
 
     gnm::SSampler sSampler{};
@@ -432,7 +432,8 @@ Cache::ShaderResources::eval(ir::InstructionId instId,
     auto offset = eval(operands[3]).zExtScalar();
 
     if (!base || !offset) {
-      rx::die("failed to evaluate pointer dependency");
+      std::fprintf(stderr, "[GPU] WARNING: failed to evaluate pointer dependency - returning null\n");
+      return eval::Value();  // Return empty value instead of crashing
     }
 
     eval::Value result;

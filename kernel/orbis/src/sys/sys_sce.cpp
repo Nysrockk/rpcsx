@@ -100,15 +100,21 @@ orbis::SysResult orbis::sys_regmgr_call(Thread *thread, uint32_t op,
 
     auto intValIt = g_context->regMgrInt.find(id);
     if (intValIt == g_context->regMgrInt.end()) {
-      ORBIS_LOG_ERROR("registry int entry not exists", op, id, len);
-      thread->where();
-      // return ErrorCode::NOENT;
-      return uwrite((ptr<uint>)value, 0u);
-      return {};
+      // Provide default values for common registry entries to unblock Shell
+      uint32_t defaultValue = 0;
+      switch (id) {
+      case 0x142d0100: // Shell UI initialization flag
+      case 0x14190600: // Network/system initialization flag
+        defaultValue = 1;
+        break;
+      default:
+        ORBIS_LOG_ERROR("registry int entry not exists", op, id, len);
+        thread->where();
+        break;
+      }
+      return uwrite((ptr<uint>)value, defaultValue);
     }
     return uwrite((ptr<uint>)value, intValIt->second);
-
-    return {};
   }
 
   if (op == 4) {
@@ -268,8 +274,9 @@ orbis::SysResult orbis::sys_evf_open(Thread *thread, ptr<const char[32]> name) {
   auto eventFlag = thread->tproc->context->findEventFlag(_name);
 
   if (eventFlag == nullptr) {
-    ORBIS_LOG_ERROR(__FUNCTION__, _name, "not exists");
-    return ErrorCode::NOENT;
+    ORBIS_LOG_WARNING(__FUNCTION__, _name, "not exists, creating stub");
+    // Create stub event flag to prevent guest crashes
+    eventFlag = thread->tproc->context->createEventFlag(_name, kEvfAttrSingle | kEvfAttrThFifo, 0).first;
   }
 
   auto fd = thread->tproc->evfMap.insert(eventFlag);
@@ -658,9 +665,29 @@ orbis::SysResult orbis::sys_osem_post(Thread *thread, sint id, sint count) {
 }
 orbis::SysResult orbis::sys_osem_cancel(Thread *thread, sint id, sint set,
                                         ptr<uint> pNumWaitThreads) {
-  ORBIS_LOG_TODO(__FUNCTION__, thread, id, set, pNumWaitThreads);
-  std::abort();
-  return ErrorCode::NOSYS;
+  ORBIS_LOG_TRACE(__FUNCTION__, thread, id, set, pNumWaitThreads);
+  rx::Ref<Semaphore> sem = thread->tproc->semMap.get(id);
+  if (sem == nullptr) {
+    return ErrorCode::BADF;
+  }
+
+  std::lock_guard lock(sem->mtx);
+
+  // Optionally set the semaphore value
+  if (set > 0) {
+    sem->value = set;
+  }
+
+  // Wake all waiting threads
+  sem->cond.notify_all(sem->mtx);
+
+  // We can't easily track the number of waiting threads with shared_cv
+  // Return 0 for now (similar to how some other stubs behave)
+  if (pNumWaitThreads != 0) {
+    return uwrite(pNumWaitThreads, static_cast<uint>(0));
+  }
+
+  return {};
 }
 orbis::SysResult orbis::sys_namedobj_create(Thread *thread,
                                             ptr<const char[32]> name,

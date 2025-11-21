@@ -120,7 +120,9 @@ static SysResult keventChange(KQueue *kq, KEvent &change, Thread *thread) {
           nodeIt->triggered = true;
           kq->cv.notify_all(kq->mtx);
         } else if (note.file->hostFd < 0) {
-          ORBIS_LOG_ERROR("Unimplemented event emitter", change.ident);
+          // Stub: Socket/file without event emitter - register silently
+          // Don't trigger immediately to avoid busy-wait loops
+          // Common for network sockets without host FDs
         }
       } else if (change.filter == kEvFiltGraphicsCore ||
                  change.filter == kEvFiltDisplay) {

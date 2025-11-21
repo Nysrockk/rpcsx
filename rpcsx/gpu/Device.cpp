@@ -84,7 +84,48 @@ static vk::Context createVkContext(Device *device) {
     glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
   }
 
+  rx::print("GLFW initializing...");
   glfwInit();
+  rx::print("GLFW initialized");
+
+  // Debug: Check all joysticks
+  rx::print("=== Scanning for joysticks ===");
+  for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i) {
+    if (glfwJoystickPresent(i)) {
+      const char* name = glfwGetJoystickName(i);
+      const char* guid = glfwGetJoystickGUID(i);
+      bool isGamepad = glfwJoystickIsGamepad(i);
+      rx::print("Joystick {}: name='{}', GUID='{}', isGamepad={}",
+                i, name ? name : "NULL", guid ? guid : "NULL", isGamepad);
+    }
+  }
+
+  // Add DualSense (PS5) and DualShock 4 (PS4) controller mappings for Linux
+  const char* ps_controller_mappings =
+    // DETECTED GUID - DualShock 4/DualSense - Product ID 09cc, Version 8111
+    "030000004c050000cc09000011810000,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,touchpad:b13,x:b0,y:b3,platform:Linux,"
+    // DualSense/DS4 v2 - Product ID 09cc, Version 8111
+    "030000004c050000cc09000011810100,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,misc1:b13,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,touchpad:b13,platform:Linux,"
+    // DualSense - Product ID 09cc (standard)
+    "030000004c050000cc09000011010000,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,misc1:b13,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,touchpad:b13,platform:Linux,"
+    // DualShock 4 v2 - Product ID 09cc (alternate)
+    "030000004c050000cc09000000010000,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,touchpad:b13,x:b0,y:b3,platform:Linux,"
+    // DualShock 4 v1 - Product ID 05c4
+    "030000004c050000c405000011010000,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,touchpad:b13,x:b0,y:b3,platform:Linux,";
+  int mappingResult = glfwUpdateGamepadMappings(ps_controller_mappings);
+  rx::print("Updated gamepad mappings, result: {}", mappingResult);
+
+  // Check again after adding mappings
+  rx::print("=== After adding mappings ===");
+  for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i) {
+    if (glfwJoystickPresent(i)) {
+      bool isGamepad = glfwJoystickIsGamepad(i);
+      if (isGamepad) {
+        rx::print("Joystick {} is now recognized as gamepad: '{}'", i, glfwGetGamepadName(i));
+      }
+    }
+  }
+
   createWindow();
 
   if (device->window == nullptr) {
@@ -95,7 +136,48 @@ static vk::Context createVkContext(Device *device) {
     createWindow();
   }
 #else
+  rx::print("GLFW initializing...");
   glfwInit();
+  rx::print("GLFW initialized");
+
+  // Debug: Check all joysticks
+  rx::print("=== Scanning for joysticks ===");
+  for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i) {
+    if (glfwJoystickPresent(i)) {
+      const char* name = glfwGetJoystickName(i);
+      const char* guid = glfwGetJoystickGUID(i);
+      bool isGamepad = glfwJoystickIsGamepad(i);
+      rx::print("Joystick {}: name='{}', GUID='{}', isGamepad={}",
+                i, name ? name : "NULL", guid ? guid : "NULL", isGamepad);
+    }
+  }
+
+  // Add DualSense (PS5) and DualShock 4 (PS4) controller mappings for Linux
+  const char* ps_controller_mappings =
+    // DETECTED GUID - DualShock 4/DualSense - Product ID 09cc, Version 8111
+    "030000004c050000cc09000011810000,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,touchpad:b13,x:b0,y:b3,platform:Linux,"
+    // DualSense/DS4 v2 - Product ID 09cc, Version 8111
+    "030000004c050000cc09000011810100,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,misc1:b13,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,touchpad:b13,platform:Linux,"
+    // DualSense - Product ID 09cc (standard)
+    "030000004c050000cc09000011010000,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,misc1:b13,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,touchpad:b13,platform:Linux,"
+    // DualShock 4 v2 - Product ID 09cc (alternate)
+    "030000004c050000cc09000000010000,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,touchpad:b13,x:b0,y:b3,platform:Linux,"
+    // DualShock 4 v1 - Product ID 05c4
+    "030000004c050000c405000011010000,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b7,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,touchpad:b13,x:b0,y:b3,platform:Linux,";
+  int mappingResult = glfwUpdateGamepadMappings(ps_controller_mappings);
+  rx::print("Updated gamepad mappings, result: {}", mappingResult);
+
+  // Check again after adding mappings
+  rx::print("=== After adding mappings ===");
+  for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i) {
+    if (glfwJoystickPresent(i)) {
+      bool isGamepad = glfwJoystickIsGamepad(i);
+      if (isGamepad) {
+        rx::print("Joystick {} is now recognized as gamepad: '{}'", i, glfwGetGamepadName(i));
+      }
+    }
+  }
+
   createWindow();
 #endif
 
@@ -381,22 +463,72 @@ void Device::start() {
   while (true) {
     glfwPollEvents();
 
+    // Keyboard fallback: Press ENTER to simulate PS button
+    if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+      static bool enterWasPressed = false;
+      if (!enterWasPressed) {
+        rx::print("ENTER key pressed - simulating PS button!");
+        kbPadState.buttons |= kPadBtnPs;
+        enterWasPressed = true;
+      }
+    } else {
+      static bool enterWasPressed = false;
+      enterWasPressed = false;
+    }
+
     if (gpIndex > GLFW_JOYSTICK_LAST) {
       for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i) {
-        if (glfwJoystickIsGamepad(i) == GLFW_TRUE) {
-          rx::print("Gamepad \"{}\" activated", glfwGetGamepadName(i));
-          gpIndex = i;
-          break;
+        if (glfwJoystickPresent(i)) {
+          const char* joyName = glfwGetJoystickName(i);
+          if (glfwJoystickIsGamepad(i) == GLFW_TRUE) {
+            rx::print("Gamepad \"{}\" activated at index {}", glfwGetGamepadName(i), i);
+            gpIndex = i;
+            break;
+          } else {
+            rx::print("Joystick \"{}\" found at index {} but not recognized as gamepad", joyName ? joyName : "Unknown", i);
+          }
         }
       }
     } else if (gpIndex <= GLFW_JOYSTICK_LAST) {
       if (!glfwJoystickIsGamepad(gpIndex)) {
+        rx::print("Gamepad at index {} disconnected", gpIndex);
         gpIndex = -1;
       }
     }
 
     if (gpIndex <= GLFW_JOYSTICK_LAST) {
+      // Debug: Check raw joystick buttons to see if GLFW detects them at all
+      int rawButtonCount;
+      const unsigned char* rawButtons = glfwGetJoystickButtons(gpIndex, &rawButtonCount);
+      static int debugCount = 0;
+      static unsigned char lastRawButtons[20] = {};
+      bool anyButtonPressed = false;
+      for (int i = 0; i < rawButtonCount && i < 20; ++i) {
+        if (rawButtons[i] == GLFW_PRESS) {
+          if (lastRawButtons[i] != GLFW_PRESS) {
+            rx::print("RAW button {} pressed! (rawButtonCount={})", i, rawButtonCount);
+            anyButtonPressed = true;
+          }
+          // Also log which mapped gamepad button this would be
+          if (debugCount++ % 60 == 0 && i == 7) {  // Log PS button (raw 7) every second
+            rx::print("PS button (raw 7) is currently HELD DOWN");
+          }
+        }
+        lastRawButtons[i] = rawButtons[i];
+      }
+
       if (glfwGetGamepadState(gpIndex, &gpState) == GLFW_TRUE) {
+        static int pollCount = 0;
+        if (pollCount++ % 300 == 0) {  // Log every ~5 seconds at 60fps
+          rx::print("Polling gamepad {}, buttons state: {:016b}", gpIndex,
+                   *(uint16_t*)gpState.buttons);
+        }
+
+        // Debug: Log gamepad GUIDE button state specifically
+        if (anyButtonPressed) {
+          rx::print("After raw button press, GLFW gamepad GUIDE button (index 8) state: {}",
+                   gpState.buttons[GLFW_GAMEPAD_BUTTON_GUIDE] == GLFW_PRESS ? "PRESSED" : "NOT PRESSED");
+        }
         kbPadState.leftStickX =
             gpState.axes[GLFW_GAMEPAD_AXIS_LEFT_X] * 127.5f + 127.5f;
         kbPadState.leftStickY =
@@ -426,9 +558,9 @@ void Device::start() {
             [GLFW_GAMEPAD_BUTTON_Y] = kPadBtnTriangle,
             [GLFW_GAMEPAD_BUTTON_LEFT_BUMPER] = kPadBtnL1,
             [GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER] = kPadBtnR1,
-            [GLFW_GAMEPAD_BUTTON_BACK] = 0,
+            [GLFW_GAMEPAD_BUTTON_BACK] = kPadBtnTouchPad,
             [GLFW_GAMEPAD_BUTTON_START] = kPadBtnOptions,
-            [GLFW_GAMEPAD_BUTTON_GUIDE] = 0,
+            [GLFW_GAMEPAD_BUTTON_GUIDE] = kPadBtnPs,
             [GLFW_GAMEPAD_BUTTON_LEFT_THUMB] = kPadBtnL3,
             [GLFW_GAMEPAD_BUTTON_RIGHT_THUMB] = kPadBtnR3,
             [GLFW_GAMEPAD_BUTTON_DPAD_UP] = kPadBtnUp,
@@ -439,7 +571,30 @@ void Device::start() {
         for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST; ++i) {
           if (gpState.buttons[i] == GLFW_PRESS) {
             kbPadState.buttons |= gpmap[i];
+            // Debug: Log ALL button presses to diagnose PS button issue
+            static std::uint32_t lastButtons = 0;
+            static const char* buttonNames[] = {
+              "A", "B", "X", "Y", "L1", "R1", "BACK", "START",
+              "GUIDE", "L3", "R3", "UP", "RIGHT", "DOWN", "LEFT"
+            };
+            if (!(lastButtons & (1 << i))) {
+              rx::print("Button {} ({}) pressed, mapping to 0x{:x}",
+                       i, i <= 14 ? buttonNames[i] : "UNKNOWN", gpmap[i]);
+              lastButtons |= (1 << i);
+            }
+          } else {
+            static std::uint32_t lastButtons = 0;
+            if (lastButtons & (1 << i)) {
+              lastButtons &= ~(1 << i);
+            }
           }
+        }
+
+        // Debug: Log final kbPadState.buttons value
+        static std::uint32_t lastKbButtons = 0;
+        if (kbPadState.buttons != lastKbButtons) {
+          rx::print("kbPadState.buttons final value: 0x{:x}", kbPadState.buttons);
+          lastKbButtons = kbPadState.buttons;
         }
       }
     } else {
@@ -914,6 +1069,7 @@ void Device::flip(std::uint32_t pid, int bufferIndex, std::uint64_t arg) {
     int width;
     int height;
     glfwGetWindowSize(window, &width, &height);
+    rx::print("Recreating swapchain {}x{}", width, height);
     vk::context->recreateSwapchain({
         .width = static_cast<uint32_t>(width),
         .height = static_cast<uint32_t>(height),
@@ -969,8 +1125,14 @@ void Device::flip(std::uint32_t pid, int bufferIndex, std::uint64_t arg) {
   auto vkQueuePresentResult =
       vkQueuePresentKHR(vk::context->presentQueue, &presentInfo);
 
+  static int frameCount = 0;
+  if (++frameCount % 60 == 0) {
+    rx::print("Presented {} frames", frameCount);
+  }
+
   if (vkQueuePresentResult == VK_ERROR_OUT_OF_DATE_KHR ||
       vkQueuePresentResult == VK_SUBOPTIMAL_KHR) {
+    rx::print("Swapchain out of date/suboptimal, recreating");
     recreateSwapchain();
   } else {
     VK_VERIFY(vkQueuePresentResult);

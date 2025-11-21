@@ -22,8 +22,12 @@
 #include <rx/mem.hpp>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <csignal>
+#include <csetjmp>
 
 static std::mutex g_mtx;
+static thread_local sigjmp_buf g_forkJmpBuf;
+static thread_local bool g_inForkCopy = false;
 
 std::string vm::mapFlagsToString(std::int32_t flags) {
   std::string result;
@@ -673,6 +677,16 @@ static void reserve(std::uint64_t startAddress, std::uint64_t endAddress) {
                                              false);
 }
 
+static void forkSigbusHandler(int sig, siginfo_t *info, void *ctx) {
+  // If we're in a fork copy operation and get SIGBUS, jump back to skip this page
+  if (g_inForkCopy) {
+    siglongjmp(g_forkJmpBuf, 1);
+  }
+  // Otherwise, let the default handler deal with it
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
 void vm::fork(std::uint64_t pid) {
   auto shmPath = rx::format("{}/memory-{}", rx::getShmPath(), pid);
   gMemoryShm =
@@ -691,6 +705,13 @@ void vm::fork(std::uint64_t pid) {
     std::abort();
   }
 
+  // Install temporary SIGBUS handler to catch faults on unmapped pages
+  struct sigaction sa, oldSa;
+  sa.sa_sigaction = forkSigbusHandler;
+  sa.sa_flags = SA_SIGINFO;
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGBUS, &sa, &oldSa);
+
   for (auto address = kMinAddress; address < kMaxAddress;
        address += kPageSize) {
     auto prot = gBlocks[(address >> kBlockShift) - kFirstBlock].getProtection(
@@ -705,8 +726,19 @@ void vm::fork(std::uint64_t pid) {
                                   gMemoryShm, address - kMinAddress);
       assert(mapping != MAP_FAILED);
 
-      rx::mem::protect(reinterpret_cast<void *>(address), kPageSize, PROT_READ);
-      std::memcpy(mapping, reinterpret_cast<void *>(address), kPageSize);
+      // Use setjmp to catch SIGBUS during mprotect/memcpy
+      if (sigsetjmp(g_forkJmpBuf, 1) == 0) {
+        g_inForkCopy = true;
+        rx::mem::protect(reinterpret_cast<void *>(address), kPageSize, PROT_READ);
+        std::memcpy(mapping, reinterpret_cast<void *>(address), kPageSize);
+        g_inForkCopy = false;
+      } else {
+        // SIGBUS occurred - page not actually mapped, skip it
+        g_inForkCopy = false;
+        rx::mem::unmap(mapping, kPageSize);
+        continue;
+      }
+
       rx::mem::unmap(mapping, kPageSize);
       rx::mem::unmap(reinterpret_cast<void *>(address), kPageSize);
 
@@ -718,6 +750,9 @@ void vm::fork(std::uint64_t pid) {
 
     // TODO: copy gpu memory?
   }
+
+  // Restore original SIGBUS handler
+  sigaction(SIGBUS, &oldSa, nullptr);
 }
 
 void vm::reset() {

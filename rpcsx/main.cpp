@@ -1055,6 +1055,8 @@ int main(int argc, const char *argv[]) {
   initProcess->ops = &rx::procOpsTable;
   initProcess->hostPid = ::getpid();
   initProcess->appInfo = {{
+      .appId = 1,
+      .titleId = {"NPXS20001"},
       .unk4 = (isSystem ? orbis::slong(0x80000000'00000000) : 0),
   }};
 

@@ -2,8 +2,15 @@
 #include "orbis/KernelAllocator.hpp"
 #include "orbis/file.hpp"
 #include "orbis/utils/Logs.hpp"
+#include <cstring>
 
 struct DevCtlFile : orbis::File {};
+
+static orbis::ErrorCode devctl_read(orbis::File *file, orbis::Uio *uio,
+                                     orbis::Thread *thread) {
+  // Return empty data - no device events pending
+  return {};
+}
 
 static orbis::ErrorCode devctl_ioctl(orbis::File *file, std::uint64_t request,
                                      void *argp, orbis::Thread *thread) {
@@ -14,6 +21,7 @@ static orbis::ErrorCode devctl_ioctl(orbis::File *file, std::uint64_t request,
 
 static const orbis::FileOps fileOps = {
     .ioctl = devctl_ioctl,
+    .read = devctl_read,
 };
 
 struct DevCtlDevice : orbis::IoDevice {
